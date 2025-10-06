@@ -5,10 +5,12 @@
  * Provides SQL-optimized operations with atomic transactions and connection pooling.
  */
 
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type DuckDB from 'duckdb';
+import type { KeyvStoreAdapter } from 'keyv';
 import { getConnection, releaseConnection } from './connection-manager.ts';
 
 /**
@@ -23,6 +25,10 @@ export interface KeyvDuckDBOptions {
   encryptionKey?: string;
   /** Maximum key size in characters. Default: 255 */
   keySize?: number;
+  /** Dialect identifier for Keyv. Default: 'duckdb' */
+  dialect?: string;
+  /** URL/connection string for Keyv. Set to path by default */
+  url?: string;
 }
 
 /**
@@ -48,7 +54,11 @@ export interface KeyvDuckDBOptions {
  * const value = await store.get('key');
  * ```
  */
-export class KeyvDuckDB {
+export class KeyvDuckDB extends EventEmitter implements KeyvStoreAdapter {
+  ttlSupport = false;
+  namespace?: string;
+  opts: KeyvDuckDBOptions;
+
   private dbFile: string;
   private table: string;
   private encryptionKey: string | undefined;
@@ -58,6 +68,8 @@ export class KeyvDuckDB {
   private keySize: number | undefined;
 
   constructor(uri?: string | KeyvDuckDBOptions, options?: Omit<KeyvDuckDBOptions, 'path'>) {
+    super(); // Call EventEmitter constructor
+
     // Parse constructor arguments
     let opts: KeyvDuckDBOptions = {};
     if (typeof uri === 'string') {
@@ -70,6 +82,11 @@ export class KeyvDuckDB {
       this.dbFile = path.join(os.homedir(), '.keyv-duckdb', 'store.duckdb');
     }
 
+    // Set dialect and url for Keyv iterator detection
+    opts.dialect = opts.dialect ?? 'duckdb';
+    opts.url = opts.url ?? this.dbFile;
+
+    this.opts = opts;
     this.table = opts.table ?? 'keyv';
     this.encryptionKey = opts.encryptionKey;
     this.keySize = opts.keySize ?? undefined;
@@ -172,9 +189,9 @@ export class KeyvDuckDB {
   /**
    * Store multiple key-value pairs efficiently.
    */
-  async setMany(entries: Array<{ key: string; value: any; ttl?: number }>): Promise<boolean[]> {
+  async setMany(entries: Array<{ key: string; value: any; ttl?: number }>): Promise<void> {
     if (!Array.isArray(entries)) throw new Error('entries must be an array');
-    if (entries.length === 0) return [];
+    if (entries.length === 0) return;
     for (const entry of entries) this.validateKey(entry.key);
     const placeholders = entries.map(() => '(?, ?)').join(',');
     const params: any[] = [];
@@ -183,7 +200,6 @@ export class KeyvDuckDB {
       params.push(typeof entry.value === 'string' ? entry.value : JSON.stringify(entry.value));
     }
     await this.run(`INSERT OR REPLACE INTO store.${this.table} (k, v) VALUES ${placeholders}`, params);
-    return entries.map(() => true);
   }
 
   /**
@@ -237,18 +253,39 @@ export class KeyvDuckDB {
 
   /**
    * Remove all stored values from the store.
+   * Respects namespace filtering if namespace is set.
    */
   async clear(): Promise<void> {
-    await this.run(`DELETE FROM store.${this.table}`);
+    if (this.namespace) {
+      // Clear only keys matching the namespace
+      await this.run(`DELETE FROM store.${this.table} WHERE k LIKE ?`, [`${this.namespace}:%`]);
+    } else {
+      // Clear all keys
+      await this.run(`DELETE FROM store.${this.table}`);
+    }
   }
 
   /**
    * Iterate through all keys in the store.
+   * Respects namespace filtering if namespace parameter or instance namespace is set.
    */
-  async *iterator(): AsyncGenerator<[string, any]> {
-    const rows = await this.all<{ k: string; v: string }>(`SELECT k, v FROM store.${this.table} ORDER BY k`);
-    for (const row of rows) {
-      yield [row.k, row.v];
+  async *iterator(namespace?: string): AsyncGenerator<[string, any]> {
+    const ns = namespace ?? this.namespace;
+
+    if (ns) {
+      // Filter by namespace
+      const pattern = `${ns}:%`;
+      const sql = `SELECT k, v FROM store.${this.table} WHERE k LIKE ? ORDER BY k`;
+      const rows = await this.all<{ k: string; v: string }>(sql, [pattern]);
+      for (const row of rows) {
+        yield [row.k, row.v];
+      }
+    } else {
+      // Return all keys
+      const rows = await this.all<{ k: string; v: string }>(`SELECT k, v FROM store.${this.table} ORDER BY k`);
+      for (const row of rows) {
+        yield [row.k, row.v];
+      }
     }
   }
 

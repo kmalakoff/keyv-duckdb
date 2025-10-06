@@ -2,6 +2,7 @@
   "name": "keyv-duckdb",
   "version": "0.0.0",
   "description": "DuckDB storage adapter for Keyv with AES-256-GCM encryption support",
+  "author": "Kevin Malakoff <kmalakoff@gmail.com> (https://github.com/kmalakoff)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kmalakoff/keyv-duckdb.git"

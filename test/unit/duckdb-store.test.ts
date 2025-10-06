@@ -192,8 +192,8 @@ describe('KeyvDuckDB', () => {
         { key: 'batch2', value: { n: 2 } },
         { key: 'batch3', value: { n: 3 } },
       ];
-      const results = await directStore.setMany(entries);
-      assert.deepStrictEqual(results, [true, true, true]);
+      await directStore.setMany(entries);
+      // Verify all entries were stored
       assert.deepStrictEqual(JSON.parse(await directStore.get('batch1')), { n: 1 });
       assert.deepStrictEqual(JSON.parse(await directStore.get('batch2')), { n: 2 });
       assert.deepStrictEqual(JSON.parse(await directStore.get('batch3')), { n: 3 });
@@ -366,6 +366,123 @@ describe('KeyvDuckDB', () => {
         await store.delete(badKey);
         assert.strictEqual(await store.get(badKey), undefined);
       }
+    });
+  });
+
+  describe('namespace support', () => {
+    it('clear() respects namespace filtering', async () => {
+      const store = new KeyvDuckDB(':memory:');
+
+      // Set some keys with namespace-like prefixes
+      await store.set('users:1', 'Alice');
+      await store.set('users:2', 'Bob');
+      await store.set('posts:1', 'Hello');
+      await store.set('posts:2', 'World');
+      await store.set('other', 'data');
+
+      // Set namespace and clear
+      store.namespace = 'users';
+      await store.clear();
+
+      // Users keys should be gone
+      assert.strictEqual(await store.get('users:1'), undefined);
+      assert.strictEqual(await store.get('users:2'), undefined);
+
+      // Other keys should remain
+      assert.strictEqual(await store.get('posts:1'), 'Hello');
+      assert.strictEqual(await store.get('posts:2'), 'World');
+      assert.strictEqual(await store.get('other'), 'data');
+
+      store.dispose();
+    });
+
+    it('clear() without namespace clears all keys', async () => {
+      const store = new KeyvDuckDB(':memory:');
+
+      await store.set('users:1', 'Alice');
+      await store.set('posts:1', 'Hello');
+      await store.set('other', 'data');
+
+      // Clear without namespace
+      await store.clear();
+
+      // All keys should be gone
+      assert.strictEqual(await store.get('users:1'), undefined);
+      assert.strictEqual(await store.get('posts:1'), undefined);
+      assert.strictEqual(await store.get('other'), undefined);
+
+      store.dispose();
+    });
+
+    it('iterator() respects namespace filtering', async () => {
+      const store = new KeyvDuckDB(':memory:');
+
+      // Set keys with namespace-like prefixes
+      await store.set('users:1', 'Alice');
+      await store.set('users:2', 'Bob');
+      await store.set('posts:1', 'Hello');
+      await store.set('posts:2', 'World');
+      await store.set('other', 'data');
+
+      // Iterate with namespace filter
+      const userKeys: string[] = [];
+      for await (const [key, _value] of store.iterator('users')) {
+        userKeys.push(key);
+      }
+
+      // Should only get user keys
+      assert.strictEqual(userKeys.length, 2);
+      assert.ok(userKeys.includes('users:1'));
+      assert.ok(userKeys.includes('users:2'));
+      assert.ok(!userKeys.includes('posts:1'));
+      assert.ok(!userKeys.includes('other'));
+
+      store.dispose();
+    });
+
+    it('iterator() with instance namespace', async () => {
+      const store = new KeyvDuckDB(':memory:');
+      store.namespace = 'posts';
+
+      await store.set('users:1', 'Alice');
+      await store.set('posts:1', 'Hello');
+      await store.set('posts:2', 'World');
+
+      // Iterate using instance namespace
+      const postKeys: string[] = [];
+      for await (const [key, _value] of store.iterator()) {
+        postKeys.push(key);
+      }
+
+      // Should only get post keys
+      assert.strictEqual(postKeys.length, 2);
+      assert.ok(postKeys.includes('posts:1'));
+      assert.ok(postKeys.includes('posts:2'));
+      assert.ok(!postKeys.includes('users:1'));
+
+      store.dispose();
+    });
+
+    it('iterator() without namespace returns all keys', async () => {
+      const store = new KeyvDuckDB(':memory:');
+
+      await store.set('users:1', 'Alice');
+      await store.set('posts:1', 'Hello');
+      await store.set('other', 'data');
+
+      // Iterate without namespace
+      const allKeys: string[] = [];
+      for await (const [key, _value] of store.iterator()) {
+        allKeys.push(key);
+      }
+
+      // Should get all keys
+      assert.strictEqual(allKeys.length, 3);
+      assert.ok(allKeys.includes('users:1'));
+      assert.ok(allKeys.includes('posts:1'));
+      assert.ok(allKeys.includes('other'));
+
+      store.dispose();
     });
   });
 });
