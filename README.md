@@ -1,87 +1,151 @@
 # keyv-duckdb
 
-DuckDB-backed async object storage implementing the `AsyncStorage<T>` interface with React Native compatibility.
+> DuckDB storage adapter for Keyv
+
+[![npm](https://img.shields.io/npm/v/keyv-duckdb.svg)](https://www.npmjs.com/package/keyv-duckdb)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+DuckDB storage adapter for [Keyv](https://github.com/jaredwray/keyv), providing a persistent key-value store with optional AES-256-GCM encryption.
+
+## Features
+
+- 🔒 **Optional Encryption**: Database-level AES-256-GCM encryption via DuckDB
+- ⚡ **Batch Operations**: Optimized `setMany`, `getMany`, `hasMany`, `deleteMany` support
+- 🔄 **Iterator Support**: Efficient key iteration with namespace filtering
+- 💾 **Persistent Storage**: Reliable file-based storage with transaction safety
+- 🎯 **Type Safe**: Full TypeScript support with comprehensive type definitions
+- 🌐 **Multi-Version**: Tested on Node.js 16, 18, 20, 22, and 24
+
+## Install
+
+```bash
+npm install keyv keyv-duckdb
+```
 
 ## Usage
 
-```typescript
-import { DuckDBStore } from '@mcp-z/keyv-duckdb';
+```javascript
+import Keyv from 'keyv';
+import { KeyvDuckDB } from 'keyv-duckdb';
 
 // Basic usage
-const store = new DuckDBStore<User>('./users.duckdb');
-
-// With encryption
-const store = new DuckDBStore<User>('./users.duckdb', {
-  encryptionKey: process.env.ENCRYPTION_KEY,
+const keyv = new Keyv({
+  store: new KeyvDuckDB('./my-database.duckdb')
 });
 
-await store.setItem('user:123', { id: 123, name: 'Alice' });
-const user = await store.getItem('user:123');
+// With encryption
+const keyv = new Keyv({
+  store: new KeyvDuckDB('./secure.duckdb', {
+    encryptionKey: process.env.ENCRYPTION_KEY
+  })
+});
 
-// Efficient multi-operations using SQL optimization
-const users = await store.multiGet(['user:123', 'user:456', 'user:789']);
-await store.multiSet([['user:101', userData1], ['user:102', userData2]]);
+// Use Keyv as normal - it handles serialization, TTL, etc.
+await keyv.set('key', { complex: 'object' });
+const value = await keyv.get('key');
+
+// TTL support (handled by Keyv)
+await keyv.set('temp', 'data', 1000); // Expires in 1 second
 ```
 
-## API
-
-Implements `AsyncStorage<T>` interface with SQL optimization:
-- `getItem(key: string): Promise<T | null>`
-- `setItem(key: string, value: T): Promise<void>`
-- `removeItem(key: string): Promise<void>`
-- `clear(): Promise<void>`
-- `getAllKeys(): Promise<string[]>`
-- `multiGet(keys: string[]): Promise<Array<[string, T | null]>>` (SQL IN clause optimization)
-- `multiSet(keyValuePairs: Array<[string, T]>): Promise<void>` (Batch INSERT optimization)
-- `multiRemove(keys: string[]): Promise<void>` (SQL IN clause optimization)
-
-## Performance Notes
-
-- **Direct key access**: O(1) operations using compound keys for optimal performance
-- **Multi-operations**: SQL batch operations for efficient bulk operations
-- **Encryption**: Database-level encryption with no performance impact on queries
-
-## Configuration
+## Options
 
 ```typescript
-interface DuckDBStoreOptions {
-  encryptionKey?: string; // Optional database encryption
+interface KeyvDuckDBOptions {
+  /** Path to DuckDB database file. Default: ~/.keyv-duckdb/store.duckdb */
+  path?: string;
+  
+  /** Table name for key-value storage. Default: 'keyv' */
+  table?: string;
+  
+  /** Encryption key for AES-256-GCM encryption. Recommended: 32+ characters */
+  encryptionKey?: string;
+  
+  /** Maximum key size in characters. Default: 255 */
+  keySize?: number;
 }
 ```
 
-Encryption uses DuckDB's native database-level encryption when `encryptionKey` is provided.
+### Encryption
 
-## Build & publishing
+When an `encryptionKey` is provided, DuckDB's native database-level encryption is enabled. The encryption is transparent to Keyv and has no performance impact on queries.
 
-This package is published with TypeScript source files and does NOT perform a local build step in the repository. A CI or publishing agent should perform type stripping or compilation as part of your release pipeline if you need JavaScript artifacts. The package intentionally includes the `src` directory so consumers (and monorepo build systems) can handle compilation.
+```javascript
+const store = new KeyvDuckDB('./secure.duckdb', {
+  encryptionKey: 'your-secure-key-at-least-32-characters-long'
+});
+```
 
-- To run type checking locally: `npm run typecheck`
-- To publish from CI, either run your normal TypeScript compile step or publish the source package as-is if your consumers expect TypeScript sources.
+**Important**: Keep your encryption key secure. If lost, encrypted data cannot be recovered.
 
-If you'd prefer to publish compiled JavaScript in `dist`, let me know and I can switch the package to emit `dist` and add a `prepare` script to build before publish.
+## Advanced Usage
 
-## AsyncStorage reference
+### Custom Table and Path
 
-This package implements the `AsyncStorage<T>` interface. The local canonical interface is available at `src/async-storage.ts` in this repository — use that file as the single source of truth for typing and behavior.
+```javascript
+const store = new KeyvDuckDB({
+  path: './custom/path/data.duckdb',
+  table: 'cache',
+  keySize: 500
+});
+```
 
-For upstream compatibility, the typings are based on the React Native AsyncStorage types. See the original reference here:
+### Batch Operations
 
-https://github.com/react-native-async-storage/async-storage/blob/main/types/index.d.ts
+The adapter provides optimized batch operations that are automatically used by Keyv:
 
-Keeping the local `src/async-storage.ts` file in-sync with upstream ensures compatibility with libraries expecting the same AsyncStorage API.
+```javascript
+// These use optimized SQL batch operations internally
+await keyv.set('key1', 'value1');
+await keyv.set('key2', 'value2');
+await keyv.set('key3', 'value3');
 
-## How this implements AsyncStorage
+const values = await Promise.all([
+  keyv.get('key1'),
+  keyv.get('key2'),
+  keyv.get('key3')
+]);
+```
 
-The `DuckDBStore` class (see `src/duckdb-store.ts`) implements the `AsyncStorage<T>` contract defined in `src/async-storage.ts`.
+### Namespace Support
 
-Key implementation details:
+```javascript
+const users = new Keyv({ store, namespace: 'users' });
+const posts = new Keyv({ store, namespace: 'posts' });
 
-- getItem/setItem/removeItem/clear/getAllKeys: straightforward SQL operations against a `store.kv` table. Keys are validated and values are JSON serialized/deserialized.
-- multiGet/multiSet/multiRemove: implemented using SQL `IN` clauses and batch `INSERT OR REPLACE` statements to optimize for bulk operations.
-- Atomicity and consistency: `INSERT OR REPLACE` and single-statement batch operations are used to maintain atomic updates; a connection manager handles transactions where needed.
-- Encoding: values are JSON-encoded before insertion and parsed on reads. `Serializable` typing in `src/async-storage.ts` indicates allowed value types.
-- Encryption: optional database-level encryption is supported via DuckDB's ENCRYPTION_KEY when provided in `DuckDBStoreOptions`.
+await users.set('123', { name: 'Alice' });
+await posts.set('456', { title: 'Hello' });
 
-For the precise interface shape and parameter types, inspect `src/async-storage.ts` — it's intentionally kept compatible with React Native's AsyncStorage types (link in that file points to the upstream source).
+// Namespaces are isolated
+await users.clear(); // Only clears users namespace
+```
 
-If you'd like, I can also add a small example snippet in `README.md` showing `DuckDBStore` instantiation and a couple of operations (get/set/multiGet). Want that added? 
+## How It Works
+
+This adapter implements the Keyv storage interface and stores serialized data in a DuckDB database. Key points:
+
+- **Serialization**: Keyv handles serialization/deserialization of values
+- **TTL**: Keyv wraps values with expiry metadata; adapter stores it as-is
+- **Schema**: Simple `key-value` table with parameterized queries for safety
+- **Connection Management**: Automatic connection pooling and cleanup on process exit
+
+## Testing
+
+```bash
+# Run test suite
+npm test
+
+# Multi-version compatibility test (requires nvu)
+npm run test:compat
+
+# Type checking
+npm run typecheck
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+
+## License
+
+MIT © [Kevin Malakoff](https://github.com/kmalakoff) 

@@ -111,7 +111,7 @@ describe('DuckDBStore Lifecycle Management', () => {
 
       // Use store normally
       await store.set('key', { data: 'test' });
-      assert.deepStrictEqual(await store.get('key'), { data: 'test' });
+      assert.deepStrictEqual(JSON.parse(await store.get('key')), { data: 'test' });
 
       // Dispose store
       store.dispose();

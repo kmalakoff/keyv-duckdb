@@ -38,6 +38,7 @@
     "build": "npm run typecheck && tsds build",
     "format": "biome check --write --unsafe",
     "test": "node --test 'test/**/*.test.ts'",
+    "test:compat": "nvu engines tsds test:node test/compat/smoke.test.ts",
     "test:engines": "nvu engines tsds test:node --no-timeouts",
     "prepublishOnly": "npm run build",
     "version": "tsds version"

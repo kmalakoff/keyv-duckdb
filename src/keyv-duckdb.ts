@@ -125,25 +125,6 @@ export class KeyvDuckDB {
   }
 
   /**
-   * Encode a value for storage
-   */
-  private encode(value: any): string {
-    return JSON.stringify(value);
-  }
-
-  /**
-   * Decode a stored value
-   */
-  private decode(str?: string | null): any {
-    if (!str) return undefined;
-    try {
-      return JSON.parse(str);
-    } catch {
-      return undefined;
-    }
-  }
-
-  /**
    * Validate key parameter
    */
   private validateKey(key: string): void {
@@ -161,7 +142,7 @@ export class KeyvDuckDB {
   async get(key: string): Promise<any> {
     this.validateKey(key);
     const rows = await this.all<{ v: string }>(`SELECT v FROM store.${this.table} WHERE k = ?`, [key]);
-    return this.decode(rows[0]?.v);
+    return rows[0]?.v;
   }
 
   /**
@@ -172,18 +153,37 @@ export class KeyvDuckDB {
     if (keys.length === 0) return [];
     const placeholders = keys.map(() => '?').join(',');
     const rows = await this.all<{ k: string; v: string }>(`SELECT k, v FROM store.${this.table} WHERE k IN (${placeholders})`, keys);
-    const resultMap = new Map(rows.map((r) => [r.k, this.decode(r.v)]));
+    const resultMap = new Map(rows.map((r) => [r.k, r.v]));
     return keys.map((key) => resultMap.get(key));
   }
 
   /**
    * Store a value with the given key.
+   * @param ttl Time-to-live in milliseconds (optional, handled by Keyv layer)
    */
-  async set(key: string, value: any): Promise<boolean> {
+  async set(key: string, value: any, _ttl?: number): Promise<boolean> {
     this.validateKey(key);
-    const encoded = this.encode(value);
-    await this.run(`INSERT OR REPLACE INTO store.${this.table} (k, v) VALUES (?, ?)`, [key, encoded]);
+    // Store value as-is; Keyv handles serialization
+    const stored = typeof value === 'string' ? value : JSON.stringify(value);
+    await this.run(`INSERT OR REPLACE INTO store.${this.table} (k, v) VALUES (?, ?)`, [key, stored]);
     return true;
+  }
+
+  /**
+   * Store multiple key-value pairs efficiently.
+   */
+  async setMany(entries: Array<{ key: string; value: any; ttl?: number }>): Promise<boolean[]> {
+    if (!Array.isArray(entries)) throw new Error('entries must be an array');
+    if (entries.length === 0) return [];
+    for (const entry of entries) this.validateKey(entry.key);
+    const placeholders = entries.map(() => '(?, ?)').join(',');
+    const params: any[] = [];
+    for (const entry of entries) {
+      params.push(entry.key);
+      params.push(typeof entry.value === 'string' ? entry.value : JSON.stringify(entry.value));
+    }
+    await this.run(`INSERT OR REPLACE INTO store.${this.table} (k, v) VALUES ${placeholders}`, params);
+    return entries.map(() => true);
   }
 
   /**
@@ -223,6 +223,19 @@ export class KeyvDuckDB {
   }
 
   /**
+   * Check if multiple keys exist in the store.
+   */
+  async hasMany(keys: string[]): Promise<boolean[]> {
+    if (!Array.isArray(keys)) throw new Error('keys must be an array');
+    if (keys.length === 0) return [];
+    for (const key of keys) this.validateKey(key);
+    const placeholders = keys.map(() => '?').join(',');
+    const rows = await this.all<{ k: string }>(`SELECT k FROM store.${this.table} WHERE k IN (${placeholders})`, keys);
+    const existsSet = new Set(rows.map((r) => r.k));
+    return keys.map((key) => existsSet.has(key));
+  }
+
+  /**
    * Remove all stored values from the store.
    */
   async clear(): Promise<void> {
@@ -235,7 +248,7 @@ export class KeyvDuckDB {
   async *iterator(): AsyncGenerator<[string, any]> {
     const rows = await this.all<{ k: string; v: string }>(`SELECT k, v FROM store.${this.table} ORDER BY k`);
     for (const row of rows) {
-      yield [row.k, this.decode(row.v)];
+      yield [row.k, row.v];
     }
   }
 

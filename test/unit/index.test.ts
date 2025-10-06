@@ -17,7 +17,7 @@ test('basic set/get/delete without encryption', async () => {
   const store = new KeyvDuckDB(file);
   await store.set('k1', { a: 1, b: 'x' });
   const v = await store.get('k1');
-  assert.deepEqual(v, { a: 1, b: 'x' });
+  assert.deepEqual(JSON.parse(v), { a: 1, b: 'x' });
   const keys: string[] = [];
   for await (const [key] of store.iterator()) {
     keys.push(key);
@@ -57,5 +57,5 @@ test('optional encryption (requires DuckDB >= 1.4.0)', async (_t) => {
   const store = new KeyvDuckDB(file, { encryptionKey: key });
   await store.set('secret', { n: 123 });
   const v = await store.get('secret');
-  assert.deepEqual(v, { n: 123 });
+  assert.deepEqual(JSON.parse(v), { n: 123 });
 });

@@ -154,17 +154,18 @@ describe('KeyvDuckDB', () => {
       await assert.rejects(() => sizedStore.set('abcde', { too: true }), /exceeds maximum/);
     });
 
-    it('returns undefined when corrupt JSON encountered', async () => {
-      const file = path.join(tmpDir, 'corrupt.duckdb');
+    it('returns raw value even if invalid JSON (no parsing)', async () => {
+      const file = path.join(tmpDir, 'raw.duckdb');
       const direct = new KeyvDuckDB(file);
       await direct.set('good', { value: 1 });
-      // Manually corrupt the row
+      // Manually corrupt the row to test raw passthrough
       const conn = (direct as any).connection ?? (await (direct as any).getConnection());
       await new Promise<void>((resolve, reject) => {
         conn.run(`UPDATE store.keyv SET v = 'not-json' WHERE k = 'good'`, (err: Error | null) => (err ? reject(err) : resolve()));
       });
       const read = await direct.get('good');
-      assert.strictEqual(read, undefined);
+      // Should return the raw string 'not-json' without parsing
+      assert.strictEqual(read, 'not-json');
     });
 
     it('supports parallel set/get operations without errors', async () => {
@@ -176,8 +177,42 @@ describe('KeyvDuckDB', () => {
       await Promise.all(writes);
       const reads = await Promise.all(Array.from({ length: 50 }, (_, i) => directStore.get(`k${i}`)));
       for (let i = 0; i < 50; i++) {
-        assert.deepStrictEqual(reads[i], { n: i });
+        // Reads return JSON strings; parse them to verify
+        assert.deepStrictEqual(JSON.parse(reads[i]), { n: i });
       }
+    });
+  });
+
+  describe('batching operations', () => {
+    it('setMany stores multiple entries efficiently', async () => {
+      const file = path.join(tmpDir, 'setmany.duckdb');
+      const directStore = new KeyvDuckDB(file);
+      const entries = [
+        { key: 'batch1', value: { n: 1 } },
+        { key: 'batch2', value: { n: 2 } },
+        { key: 'batch3', value: { n: 3 } },
+      ];
+      const results = await directStore.setMany(entries);
+      assert.deepStrictEqual(results, [true, true, true]);
+      assert.deepStrictEqual(JSON.parse(await directStore.get('batch1')), { n: 1 });
+      assert.deepStrictEqual(JSON.parse(await directStore.get('batch2')), { n: 2 });
+      assert.deepStrictEqual(JSON.parse(await directStore.get('batch3')), { n: 3 });
+    });
+
+    it('hasMany checks existence of multiple keys', async () => {
+      const file = path.join(tmpDir, 'hasmany.duckdb');
+      const directStore = new KeyvDuckDB(file);
+      await directStore.set('exists1', { a: 1 });
+      await directStore.set('exists2', { b: 2 });
+      const results = await directStore.hasMany(['exists1', 'exists2', 'missing']);
+      assert.deepStrictEqual(results, [true, true, false]);
+    });
+
+    it('setMany via Keyv wrapper', async () => {
+      await store.set('k1', { val: 1 });
+      await store.set('k2', { val: 2 });
+      const vals = await store.get(['k1', 'k2']);
+      assert.deepStrictEqual(vals, [{ val: 1 }, { val: 2 }]);
     });
   });
 

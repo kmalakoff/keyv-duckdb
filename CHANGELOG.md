@@ -2,23 +2,38 @@
 
 All notable changes to this project will be documented here.
 
-The format follows Conventional Commits and is manually curated until/if automation is added.
+The format follows [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
+
 ### Added
-- CONTRIBUTING.md with development guidelines
-- Biome formatting and lint configuration (biome.json)
-- Typecheck script and prepublish build guard
-- Minimal adapter compliance (Level 0):
-  - Parameterized SQL (no manual escaping)
-  - set now returns boolean
-  - get returns undefined (instead of null) when key missing or value corrupt
-  - keySize enforcement
-  - Safe JSON decode (corrupt values yield undefined)
+- Initial DuckDB storage adapter for Keyv
+- AES-256-GCM database-level encryption support via DuckDB
+- Batch operations: `setMany`, `getMany`, `hasMany`, `deleteMany`
+- Iterator support with namespace filtering
+- Connection pooling and automatic cleanup
+- Multi-version Node.js compatibility (16, 18, 20, 22, 24)
+- Comprehensive test suite including compatibility tests
+- TypeScript support with full type definitions
 
-### Changed
-- Broadened Node engine support to >=16
+### Features
+- Parameterized SQL queries for security
+- Proper Keyv adapter semantics (no double serialization)
+- EventEmitter-based error handling
+- Configurable table names and key sizes
+- Persistent file-based storage
 
-### Notes
-- Upcoming Level 1 will introduce TTL, raw access, batching (setMany, getManyRaw, etc.).
+### Developer Experience
+- Biome formatting and linting
+- Automated typecheck in build process
+- Multi-version compatibility testing via `nvu`
+- Comprehensive documentation and research notes
+
+## Notes
+
+This adapter follows the standard Keyv adapter pattern:
+- Stores serialized values from Keyv as-is (no additional serialization)
+- TTL is handled by Keyv via value metadata, not enforced in the adapter
+- Simple key-value schema with no expires column
+- Returns `undefined` (not `null`) for missing keys
 
