@@ -1,0 +1,34 @@
+# Node artifacts
+node_modules/
+dist/
+/.pnp*
+/package-lock.json
+/yarn.lock
+
+# Env
+.env
+.env.*
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# MacOS
+.DS_Store
+
+# VSCode
+.vscode/
+.claude/
+
+# TypeScript
+*.tsbuildinfo
+
+# Local database files
+*.db
+
+# Temporary files
+.tmp/
+
+# Internal working documents
+.agents/
