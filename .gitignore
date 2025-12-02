@@ -1,34 +1,14 @@
-# Node artifacts
+.DS_Store
 node_modules/
 dist/
-/.pnp*
-/package-lock.json
-/yarn.lock
-
-# Env
-.env
-.env.*
-
-# Logs
+docs/
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# MacOS
-.DS_Store
-
-# VSCode
-.vscode/
-.claude/
-
-# TypeScript
-*.tsbuildinfo
-
-# Local database files
-*.db
-
-# Temporary files
 .tmp/
+.cache/
 
-# Internal working documents
+# agents
 .agents/
+AGENTS.md
+.claude/
+CLAUDE.md
+

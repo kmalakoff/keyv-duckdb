@@ -2,15 +2,6 @@
   "name": "keyv-duckdb",
   "version": "0.1.0",
   "description": "DuckDB storage adapter for Keyv with AES-256-GCM encryption support",
-  "author": "Kevin Malakoff <kmalakoff@gmail.com> (https://github.com/kmalakoff)",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/kmalakoff/keyv-duckdb.git"
-  },
-  "bugs": {
-    "url": "https://github.com/kmalakoff/keyv-duckdb/issues"
-  },
-  "homepage": "https://github.com/kmalakoff/keyv-duckdb#readme",
   "keywords": [
     "keyv",
     "duckdb",
@@ -19,7 +10,16 @@
     "cache",
     "key-value"
   ],
+  "homepage": "https://github.com/kmalakoff/keyv-duckdb#readme",
+  "bugs": {
+    "url": "https://github.com/kmalakoff/keyv-duckdb/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kmalakoff/keyv-duckdb.git"
+  },
   "license": "MIT",
+  "author": "Kevin Malakoff <kmalakoff@gmail.com> (https://github.com/kmalakoff)",
   "type": "module",
   "exports": {
     ".": {
@@ -28,47 +28,37 @@
     },
     "./package.json": "./package.json"
   },
-  "main": "./dist/cjs/index.js",
-  "module": "./dist/esm/index.js",
-  "types": "./dist/esm/index.d.ts",
+  "main": "dist/cjs/index.js",
+  "types": "dist/cjs/index.d.ts",
   "files": [
     "dist"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && tsds build",
+    "build": "tsds build",
     "format": "biome check --write --unsafe",
-    "test": "node --test 'test/**/*.test.ts'",
-    "test:compat": "nvu engines tsds test:node test/compat/smoke.test.ts",
+    "prepublishOnly": "tsds validate",
+    "test": "tsds test:node --no-timeouts",
     "test:engines": "nvu engines tsds test:node --no-timeouts",
-    "prepublishOnly": "npm run build",
     "version": "tsds version"
   },
   "dependencies": {
-    "duckdb": "1.4.0",
-    "signal-exit": "^4.1.0"
-  },
-  "peerDependencies": {
-    "keyv": "^5.0.0"
+    "@duckdb/node-api": "*"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.2.5",
-    "@types/node": "^24.6.2",
-    "keyv": "^5.5.3",
-    "ts-dev-stack": "^1.18.8",
-    "typescript": "^5.9.3"
+    "@biomejs/biome": "*",
+    "@types/mocha": "*",
+    "@types/node": "*",
+    "keyv": "*",
+    "node-version-use": "*",
+    "ts-dev-stack": "*"
+  },
+  "peerDependencies": {
+    "keyv": "*"
   },
   "engines": {
     "node": ">=16"
   },
   "tsds": {
     "source": "src/index.ts"
-  },
-  "depcheck": {
-    "ignores": [
-      "@biomejs/biome",
-      "ts-dev-stack",
-      "typescript"
-    ]
   }
 }

@@ -1,43 +1,51 @@
 /**
- * @fileoverview Simple DuckDB connection manager with process exit handling
+ * @fileoverview Simple DuckDB connection manager using @duckdb/node-api
  *
- * Each store instance gets its own connection. Connections are automatically
- * cleaned up on process exit using signal-exit.
+ * Each store instance gets its own connection. Uses the modern Promise-based API.
  */
 
-import DuckDB from 'duckdb';
-import { onExit } from 'signal-exit';
+import { type DuckDBConnection, DuckDBInstance } from '@duckdb/node-api';
 
 interface ConnectionInfo {
-  connection: DuckDB.Connection;
-  database: DuckDB.Database;
+  instance: DuckDBInstance;
+  connection: DuckDBConnection;
+  encrypted: boolean;
 }
 
 const connections = new Set<ConnectionInfo>();
 
-// Setup automatic cleanup on process exit
-onExit(() => {
-  closeAllConnections();
-});
-
 /**
  * Create a new connection for the given database path and optional encryption key
  * Each call creates a separate connection instance
+ *
+ * For unencrypted databases: opens the file directly
+ * For encrypted databases: uses in-memory instance with ATTACH (required by DuckDB)
  */
-export async function getConnection(dbPath: string, encryptionKey?: string): Promise<DuckDB.Connection> {
-  const database = new DuckDB.Database(':memory:');
-  const connection = database.connect();
+export async function getConnection(dbPath: string, encryptionKey?: string): Promise<DuckDBConnection> {
+  let instance: DuckDBInstance;
+  let encrypted = false;
 
-  // Attach the file database
-  const attachCommand = encryptionKey ? `ATTACH '${dbPath}' AS store (ENCRYPTION_KEY '${encryptionKey}')` : `ATTACH '${dbPath}' AS store`;
+  if (encryptionKey) {
+    // Encrypted: must use in-memory + ATTACH pattern
+    instance = await DuckDBInstance.create(':memory:');
+    encrypted = true;
+  } else {
+    // Unencrypted: open file directly for proper persistence
+    instance = await DuckDBInstance.create(dbPath);
+  }
 
-  await new Promise<void>((resolve, reject) => {
-    connection.run(attachCommand, (err: Error | null) => (err ? reject(err) : resolve()));
-  });
+  const connection = await instance.connect();
+
+  if (encryptionKey) {
+    // Attach the file database with encryption
+    const attachCommand = `ATTACH '${dbPath}' AS store (ENCRYPTION_KEY '${encryptionKey}')`;
+    await connection.run(attachCommand);
+  }
 
   const connectionInfo: ConnectionInfo = {
+    instance,
     connection,
-    database,
+    encrypted,
   };
 
   connections.add(connectionInfo);
@@ -45,15 +53,43 @@ export async function getConnection(dbPath: string, encryptionKey?: string): Pro
 }
 
 /**
- * Remove and close a specific connection
- * Should be called when a store instance is disposed
+ * Check if a connection is using encryption (and thus the ATTACH pattern)
  */
-export function releaseConnection(connection: DuckDB.Connection): void {
+export function isEncryptedConnection(connection: DuckDBConnection): boolean {
   for (const info of connections) {
     if (info.connection === connection) {
-      info.connection.close();
-      info.database.close();
+      return info.encrypted;
+    }
+  }
+  return false;
+}
+
+/**
+ * Remove and close a specific connection
+ * Should be called when a store instance is disposed
+ * Returns a promise that resolves when the connection is fully closed
+ */
+export async function releaseConnection(connection: DuckDBConnection): Promise<void> {
+  for (const info of connections) {
+    if (info.connection === connection) {
       connections.delete(info);
+
+      try {
+        if (info.encrypted) {
+          // For encrypted connections, checkpoint and detach the attached database
+          await connection.run('CHECKPOINT store');
+          await connection.run('DETACH store');
+        } else {
+          // For unencrypted connections, checkpoint the main database to flush data
+          await connection.run('CHECKPOINT');
+        }
+      } catch {
+        // Ignore cleanup errors
+      }
+
+      // Close the connection, then the instance to release file locks
+      connection.closeSync();
+      info.instance.closeSync();
       return;
     }
   }
@@ -70,10 +106,26 @@ export function getConnectionCount(): number {
  * Force close all connections (for testing/cleanup)
  * WARNING: This will break any active stores using these connections
  */
-export function closeAllConnections(): void {
+export async function closeAllConnections(): Promise<void> {
+  const closePromises: Promise<void>[] = [];
   for (const info of connections) {
-    info.connection.close();
-    info.database.close();
+    closePromises.push(
+      (async () => {
+        try {
+          if (info.encrypted) {
+            await info.connection.run('CHECKPOINT store');
+            await info.connection.run('DETACH store');
+          } else {
+            await info.connection.run('CHECKPOINT');
+          }
+        } catch {
+          // Ignore cleanup errors
+        }
+        info.connection.closeSync();
+        info.instance.closeSync();
+      })()
+    );
   }
   connections.clear();
+  await Promise.all(closePromises);
 }
