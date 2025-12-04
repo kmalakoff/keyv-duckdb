@@ -1,1 +1,1 @@
-ignores: ["node-version-use", "ts-dev-stack", "@biomejs/biome", "keyv-duckdb"]
+ignores: ["node-version-use", "ts-dev-stack", "keyv-duckdb"]

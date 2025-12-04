@@ -36,7 +36,7 @@
   ],
   "scripts": {
     "build": "tsds build",
-    "format": "biome check --write --unsafe",
+    "format": "tsds format",
     "prepublishOnly": "tsds validate",
     "test": "tsds test:node --no-timeouts",
     "test:engines": "nvu engines tsds test:node --no-timeouts",
@@ -46,12 +46,12 @@
     "@duckdb/node-api": "*"
   },
   "devDependencies": {
-    "@biomejs/biome": "*",
     "@types/mocha": "*",
     "@types/node": "*",
     "keyv": "*",
     "node-version-use": "*",
-    "ts-dev-stack": "*"
+    "ts-dev-stack": "*",
+    "tsds-config": "*"
   },
   "peerDependencies": {
     "keyv": "*"
