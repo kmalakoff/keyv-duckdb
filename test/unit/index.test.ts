@@ -241,7 +241,7 @@ describe('DuckDBStore Store', () => {
   });
 
   describe('encryption behavior', () => {
-    it('defaults to encryption disabled when no ENCRYPTION_KEY env var', async () => {
+    it('defaults to encryption disabled when no ENCRYPTION_KEY env let', async () => {
       const originalKey = process.env.ENCRYPTION_KEY;
       delete process.env.ENCRYPTION_KEY;
 
@@ -257,7 +257,7 @@ describe('DuckDBStore Store', () => {
       }
     });
 
-    it('defaults to encryption enabled when ENCRYPTION_KEY env var is set', async () => {
+    it('defaults to encryption enabled when ENCRYPTION_KEY env let is set', async () => {
       const testKey = 'test_encryption_key_32_characters!';
       const originalKey = process.env.ENCRYPTION_KEY;
       process.env.ENCRYPTION_KEY = testKey;
