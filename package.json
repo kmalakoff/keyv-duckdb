@@ -1,6 +1,6 @@
 {
   "name": "keyv-duckdb",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "DuckDB storage adapter for Keyv with AES-256-GCM encryption support",
   "keywords": [
     "keyv",
