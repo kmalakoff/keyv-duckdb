@@ -418,9 +418,7 @@ export class KeyvDuckDB extends EventEmitter implements KeyvStoreAdapter {
    * Waits for any pending operations to complete before disposing.
    */
   async dispose(): Promise<void> {
-    if (this.disposed) {
-      return; // Already disposed
-    }
+    if (this.disposed) return; // Already disposed
 
     // Wait for pending operations to complete
     while (this.pendingOperations > 0) {
