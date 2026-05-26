@@ -141,7 +141,8 @@ export class KeyvDuckDB extends EventEmitter implements KeyvStoreAdapter {
     // Initialize schema if not already done (queue to serialize with other operations)
     if (!this.schemaInitialized) {
       const tableRef = this.getTableRef();
-      await this.queueOperation(() => this.connection?.run(`CREATE TABLE IF NOT EXISTS ${tableRef} (k TEXT PRIMARY KEY, v TEXT)`));
+      const conn = this.connection;
+      if (conn) await this.queueOperation(() => conn.run(`CREATE TABLE IF NOT EXISTS ${tableRef} (k TEXT PRIMARY KEY, v TEXT)`));
       this.schemaInitialized = true;
     }
 
