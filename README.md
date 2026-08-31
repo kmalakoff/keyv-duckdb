@@ -2,8 +2,7 @@
 
 > DuckDB storage adapter for [Keyv](https://github.com/jaredwray/keyv) - persistent key-value storage with encryption
 
-[![npm](https://img.shields.io/npm/v/keyv-duckdb.svg)](https://www.npmjs.com/package/keyv-duckdb)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![npm](https://img.shields.io/npm/v/keyv-duckdb.svg)](https://www.npmjs.com/package/keyv-duckdb) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A Keyv storage adapter that uses DuckDB for local file-based storage, similar to [@keyv/sqlite](https://github.com/jaredwray/keyv/tree/main/packages/sqlite) but with optional database-level encryption and optimized batch operations. Works with Keyv's standard API for caching, session storage, or any key-value needs.
 

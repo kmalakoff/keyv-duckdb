@@ -1,1 +1,1 @@
-ignores: ["node-version-use", "ts-dev-stack", "keyv-duckdb"]
+ignores: ["keyv-duckdb", "node-version-use", "ts-dev-stack"]
