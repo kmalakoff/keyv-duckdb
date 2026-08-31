@@ -1,9 +1,12 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
+import url from 'node:url';
 import assert from 'assert';
 import Keyv from 'keyv';
 import { KeyvDuckDB } from 'keyv-duckdb';
+
+const __dirname = path.dirname(typeof __filename !== 'undefined' ? __filename : url.fileURLToPath(import.meta.url));
+const packageRoot = path.join(__dirname, '..', '..');
 
 describe('DuckDBStore Store', () => {
   let tmpDir: string;
@@ -12,7 +15,7 @@ describe('DuckDBStore Store', () => {
   let testFile: string;
 
   beforeEach(async () => {
-    const tmpParent = path.join(os.tmpdir(), '.tmp');
+    const tmpParent = path.join(packageRoot, '.tmp');
     await fs.mkdir(tmpParent, { recursive: true });
     tmpDir = await fs.mkdtemp(path.join(tmpParent, 'duckdb-store-test-'));
     testFile = path.join(tmpDir, 'test.duckdb');
