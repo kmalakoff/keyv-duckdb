@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import url from 'node:url';
 import assert from 'assert';
+import { safeRmSync } from 'fs-remove-compat';
 import { closeAllConnections, getConnectionCount, KeyvDuckDB } from 'keyv-duckdb';
 
 const __dirname = path.dirname(typeof __filename !== 'undefined' ? __filename : url.fileURLToPath(import.meta.url));
@@ -22,11 +23,7 @@ describe('DuckDBStore Lifecycle Management', () => {
   afterEach(async () => {
     // Clean up connections and temp files
     await closeAllConnections();
-    try {
-      await fs.rm(tmpDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
+    safeRmSync(tmpDir);
   });
 
   describe('connection management', () => {
