@@ -1,31 +1,10 @@
 # keyv-duckdb
 
-> DuckDB storage adapter for [Keyv](https://github.com/jaredwray/keyv) - persistent key-value storage with encryption
+A local DuckDB storage adapter for [Keyv](https://keyv.org), with optional database encryption.
 
 [![npm](https://img.shields.io/npm/v/keyv-duckdb.svg)](https://www.npmjs.com/package/keyv-duckdb) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Keyv storage adapter that uses DuckDB for local file-based storage, similar to [@keyv/sqlite](https://github.com/jaredwray/keyv/tree/main/packages/sqlite) but with optional database-level encryption and optimized batch operations. Works with Keyv's standard API for caching, session storage, or any key-value needs.
-
-## About
-
-[Keyv](https://keyv.org) is a simple and consistent key-value storage library for Node.js. It supports multiple storage backends (Redis, MongoDB, SQLite, PostgreSQL, etc.) through storage adapters.
-
-**keyv-duckdb** is a storage adapter that uses DuckDB as the backend, offering:
-- 🗄️ **File-based persistent storage** (like SQLite)
-- 🔒 **Optional database-level encryption** (AES-256-GCM via DuckDB)
-- ⚡ **Optimized batch operations** (setMany, getMany, hasMany, deleteMany)
-- 🌐 **Multi-version support** (Node.js 16, 18, 20, 22, 24)
-
-**Use this adapter when you want**: Local persistent storage with optional encryption, similar to SQLite but with DuckDB's benefits.
-
-## Features
-
-- 🔒 **Optional Encryption**: Database-level AES-256-GCM encryption via DuckDB
-- ⚡ **Batch Operations**: Optimized `setMany`, `getMany`, `hasMany`, `deleteMany` support
-- 🔄 **Iterator Support**: Efficient key iteration with namespace filtering
-- 💾 **Persistent Storage**: Reliable file-based storage with transaction safety
-- 🎯 **Type Safe**: Full TypeScript support with comprehensive type definitions
-- 🌐 **Multi-Version**: Tested on Node.js 16, 18, 20, 22, and 24
+Use it when you want Keyv's cache API backed by a local DuckDB file. The adapter supports batch methods and key iteration through Keyv's store interface.
 
 ## Install
 
@@ -33,7 +12,9 @@ A Keyv storage adapter that uses DuckDB for local file-based storage, similar to
 npm install keyv keyv-duckdb
 ```
 
-> **Note**: You need both `keyv` and `keyv-duckdb`. This package is a storage adapter for Keyv and must be used through the Keyv library.
+Install both packages: `keyv-duckdb` provides the storage adapter, while `keyv` provides the public cache API.
+
+Node.js 16 or newer is required. This package declares a peer dependency on Keyv 5.5.5 or newer.
 
 ## Quick Start
 
@@ -51,32 +32,23 @@ await keyv.set('hello', 'world');
 const value = await keyv.get('hello'); // 'world'
 ```
 
-## Usage
+Keyv handles serialization, TTL, and namespacing. Use `KeyvDuckDB` as the store passed to `Keyv`, rather than as the public cache API.
 
-> **Important**: This is a Keyv storage adapter. Always use it through the Keyv library as shown above. Keyv handles serialization, TTL, and namespacing. Don't use `KeyvDuckDB` directly.
+## Encryption
 
 ```javascript
 import Keyv from 'keyv';
 import { KeyvDuckDB } from 'keyv-duckdb';
 
-// Basic usage
-const keyv = new Keyv({
-  store: new KeyvDuckDB('./my-database.duckdb')
-});
-
-// With encryption
 const keyv = new Keyv({
   store: new KeyvDuckDB('./secure.duckdb', {
-    encryptionKey: process.env.ENCRYPTION_KEY
+    encryptionKey: process.env.KEYV_DUCKDB_KEY
   })
 });
 
-// Use Keyv as normal - it handles serialization, TTL, etc.
+// Set KEYV_DUCKDB_KEY before starting this program.
 await keyv.set('key', { complex: 'object' });
 const value = await keyv.get('key');
-
-// TTL support (handled by Keyv)
-await keyv.set('temp', 'data', 1000); // Expires in 1 second
 ```
 
 ## Options
@@ -89,25 +61,19 @@ interface KeyvDuckDBOptions {
   /** Table name for key-value storage. Default: 'keyv' */
   table?: string;
   
-  /** Encryption key for AES-256-GCM encryption. Recommended: 32+ characters */
+  /** Encryption key passed to DuckDB */
   encryptionKey?: string;
   
-  /** Maximum key size in characters. Default: 255 */
+  /** Maximum key size in characters */
   keySize?: number;
+
+  /** Keyv dialect identifier and database URL */
+  dialect?: string;
+  url?: string;
 }
 ```
 
-### Encryption
-
-When an `encryptionKey` is provided, DuckDB's native database-level encryption is enabled. The encryption is transparent to Keyv and has no performance impact on queries.
-
-```javascript
-const store = new KeyvDuckDB('./secure.duckdb', {
-  encryptionKey: 'your-secure-key-at-least-32-characters-long'
-});
-```
-
-**Important**: Keep your encryption key secure. If lost, encrypted data cannot be recovered.
+When an `encryptionKey` is provided, the adapter opens the database with DuckDB's native database-level encryption. The key is required for every subsequent connection. Keep it outside the database, and do not expect encryption to have zero performance cost. If the key is lost, the encrypted data cannot be recovered.
 
 ## Advanced Usage
 
@@ -121,26 +87,10 @@ const store = new KeyvDuckDB({
 });
 ```
 
-### Batch Operations
-
-The adapter provides optimized batch operations that are automatically used by Keyv:
-
-```javascript
-// These use optimized SQL batch operations internally
-await keyv.set('key1', 'value1');
-await keyv.set('key2', 'value2');
-await keyv.set('key3', 'value3');
-
-const values = await Promise.all([
-  keyv.get('key1'),
-  keyv.get('key2'),
-  keyv.get('key3')
-]);
-```
-
 ### Namespace Support
 
 ```javascript
+const store = new KeyvDuckDB('./my-database.duckdb');
 const users = new Keyv({ store, namespace: 'users' });
 const posts = new Keyv({ store, namespace: 'posts' });
 
@@ -151,35 +101,11 @@ await posts.set('456', { title: 'Hello' });
 await users.clear(); // Only clears users namespace
 ```
 
-## How It Works
-
-This adapter implements the Keyv storage interface and stores serialized data in a DuckDB database. Key points:
-
-- **Serialization**: Keyv handles serialization/deserialization of values
-- **TTL**: Keyv wraps values with expiry metadata; adapter stores it as-is
-- **Schema**: Simple `key-value` table with parameterized queries for safety
-- **Connection Management**: Automatic connection pooling and cleanup on process exit
-
-## Testing
-
-```bash
-# Run test suite
-npm test
-
-# Multi-version compatibility test (requires nvu)
-npm run test:compat
-
-# Type checking
-npm run typecheck
-```
-
 ## Troubleshooting
 
 **Database locked errors**: Ensure only one process accesses the database file at a time.
 
-**Encryption errors**: Verify your encryption key is correct and consistent across uses. If you lose the key, encrypted data cannot be recovered.
-
-**TypeScript errors**: Install `@types/node` if you encounter type errors.
+**Encryption errors**: Verify that the same encryption key is used for every connection.
 
 **General Keyv issues**: See the [Keyv documentation](https://keyv.org) for help with Keyv-specific features and patterns.
 
@@ -196,4 +122,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 
 ## License
 
-MIT © [Kevin Malakoff](https://github.com/kmalakoff) 
+MIT © [Kevin Malakoff](https://github.com/kmalakoff)
