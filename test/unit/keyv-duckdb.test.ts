@@ -2,8 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import url from 'node:url';
 import assert from 'assert';
+import { safeRmSync } from 'fs-remove-compat';
 import Keyv from 'keyv';
-import { KeyvDuckDB } from 'keyv-duckdb';
+import { closeAllConnections, KeyvDuckDB } from 'keyv-duckdb';
 
 const __dirname = path.dirname(typeof __filename !== 'undefined' ? __filename : url.fileURLToPath(import.meta.url));
 const packageRoot = path.join(__dirname, '..', '..');
@@ -24,11 +25,8 @@ describe('DuckDBStore Store', () => {
   });
 
   afterEach(async () => {
-    try {
-      await fs.rm(tmpDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
+    await closeAllConnections();
+    safeRmSync(tmpDir);
   });
 
   describe('constructor', () => {
