@@ -37,8 +37,6 @@ This project provides a DuckDB storage adapter for Keyv following the standard K
 
 ## Understanding Keyv Adapters
 
-**READ FIRST**: See `.agents/KEYV-ADAPTER-RESEARCH.md` for comprehensive documentation on the Keyv adapter pattern.
-
 Key principles:
 - **Adapters store values as-is** – Keyv handles serialization, not the adapter
 - **No TTL enforcement in adapter** – Keyv wraps values with expiry metadata
@@ -75,14 +73,11 @@ Use Conventional Commit style:
 - The library targets Node >=16 runtime
 - CI and local multi-version checks use `nvu` for testing across Node 16/18/20/22/24
 
-## Release Process
+## Releases
 
-1. Ensure working directory is clean and tests pass
-2. Update CHANGELOG.md with notable changes
-3. Run `npm run build` (includes typecheck)
-4. Bump version: `npm version <patch|minor|major>`
-5. Push with tags: `git push && git push --tags`
-6. Publish: `npm publish`
+The maintainer cuts releases with `tsds publish <patch|minor|major>`, which reinstalls from the lockfile, runs the tests, bumps the version and publishes in one step. Contributors do not publish, and a pull request never bumps the version or edits the version history.
+
+What a pull request should carry: a clean `tsds validate` and `npm test`, a passing `npm run test:engines` sweep, and a description saying what a consumer of the adapter would notice. The CHANGELOG entry is written when the release is cut, because its heading carries the version the change ships under, which is not known while the pull request is open.
 
 ## What This Adapter Does (and Doesn't Do)
 
