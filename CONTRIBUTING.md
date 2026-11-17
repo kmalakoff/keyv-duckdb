@@ -7,21 +7,25 @@ This project provides a DuckDB storage adapter for Keyv following the standard K
 ## Development Workflow
 
 1. Clone and install dependencies:
+
    ```bash
    npm install
    ```
 
 2. Run tests:
+
    ```bash
    npm test
    ```
 
 3. Run type checking:
+
    ```bash
    npm run typecheck
    ```
 
 4. Format & lint (Biome auto-fixes):
+
    ```bash
    npm run format
    ```
@@ -31,28 +35,29 @@ This project provides a DuckDB storage adapter for Keyv following the standard K
 - `src/keyv-duckdb.ts` – Main adapter implementation
 - `src/connection-manager.ts` – DuckDB connection pooling
 - `src/index.ts` – Public exports
-- `test/` – Test suites using Node's test runner
-- `test/compat/` – Multi-version compatibility tests
+- `test/` – Mocha suites run through `tsds test:node`; `test/data/0.1.13/` holds real 0.1.13 files used by the conversion tests
 - `dist/` – Generated build artifacts (dual ESM/CJS)
 
 ## Understanding Keyv Adapters
 
 Key principles:
+
 - **Adapters store values as-is** – Keyv handles serialization, not the adapter
-- **No TTL enforcement in adapter** – Keyv wraps values with expiry metadata
-- **Simple schema** – Just key-value table, no expires column needed
+- **Absolute `expires`** – Keyv 6 passes it to `set`/`setMany`; the adapter stores it in the `expires` column and filters expired rows on reads
+- **Namespace column** – the adapter scopes every read, write, `clear` and `iterator` by its namespace
 - **Return undefined on miss** – Not null
 - **Batching is optional but recommended** – We implement setMany, getMany, hasMany, deleteMany
 
 ## Coding Standards
 
 - Strict TypeScript settings (noUncheckedIndexedAccess, exactOptionalPropertyTypes, etc.)
-- All SQL must be parameterized – do not concatenate keys or values into SQL
+- All SQL must be parameterized – do not concatenate keys or values into SQL; identifiers and `ATTACH` literals that cannot be bound are quoted
 - Prefer small, reviewable commits with conventional prefixes (feat:, fix:, chore:, docs:, refactor:, test:)
 
 ## Commit Messages
 
 Use Conventional Commit style:
+
 - `feat:` new feature
 - `fix:` bug fix
 - `docs:` documentation changes
@@ -62,16 +67,15 @@ Use Conventional Commit style:
 
 ## Testing
 
-- Use Node's built-in test runner (no Jest/Mocha to keep footprint small)
 - Test both Keyv-wrapped usage (normal) and direct adapter usage
 - Verify batching operations maintain correct ordering
 - Test persistence across connections
-- Multi-version compatibility: `npm run test:compat`
+- Multi-version compatibility: `npm run test:engines`
 
 ## Version Support
 
-- The library targets Node >=16 runtime
-- CI and local multi-version checks use `nvu` for testing across Node 16/18/20/22/24
+- The library targets Node >=22.19.0 (Keyv 6's floor)
+- `npm run test:engines` uses `nvu` to run the tests across the supported Node versions
 
 ## Releases
 
@@ -82,6 +86,7 @@ What a pull request should carry: a clean `tsds validate` and `npm test`, a pass
 ## What This Adapter Does (and Doesn't Do)
 
 ### ✅ Adapter Responsibilities
+
 - Store and retrieve serialized values from Keyv
 - Implement KeyvStoreAdapter interface (get, set, delete, clear, iterator)
 - Provide batching optimizations (getMany, setMany, etc.)
@@ -89,15 +94,15 @@ What a pull request should carry: a clean `tsds validate` and `npm test`, a pass
 - Parameterize all SQL queries for safety
 
 ### ❌ NOT Adapter Responsibilities
+
 - Serialization/deserialization (Keyv does this)
-- TTL enforcement (Keyv handles via metadata)
+- Expiry timing (Keyv computes `expires`; the adapter stores and filters on it)
 - Value transformation
 - Logging/metrics (beyond error events)
-- Schema migrations for TTL support (not needed)
 
 ## Common Pitfalls to Avoid
 
-1. **Don't add an expires column** – Keyv stores expiry in the value itself
+1. **Keep the table layout in step with `@keyv/sqlite`** – other tools and the 0.1.x conversion rely on `key`, `value`, `namespace`, `expires`
 2. **Don't serialize values yourself** – Store what Keyv gives you
 3. **Don't implement raw mode APIs** – Not part of KeyvStoreAdapter
 4. **Don't promise TTL features** – That's Keyv's job

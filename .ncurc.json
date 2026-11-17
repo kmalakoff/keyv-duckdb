@@ -1,4 +1,4 @@
 {
   "upgrade": true,
-  "reject": ["keyv"]
+  "reject": ["keyv", "@types/node", "@duckdb/node-api"]
 }

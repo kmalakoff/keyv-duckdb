@@ -136,8 +136,8 @@ describe('DuckDBStore Store', () => {
         keys.push(key);
       }
       keys.sort(); // Order not guaranteed
-      // Keyv prefixes keys with 'keyv:' by default
-      assert.deepStrictEqual(keys, ['keyv:key1', 'keyv:key2', 'keyv:key3']);
+      // Keyv 6 has no default namespace and never prefixes keys
+      assert.deepStrictEqual(keys, ['key1', 'key2', 'key3']);
     });
 
     it('returns true from set on success (direct store)', async () => {
@@ -164,7 +164,7 @@ describe('DuckDBStore Store', () => {
       const storeInternal = direct as unknown as StoreWithConnection;
       const conn = storeInternal.connection ?? (await storeInternal.getConnection());
       // For unencrypted databases, the table is directly in the main database
-      await conn.run(`UPDATE keyv SET v = 'not-json' WHERE k = 'good'`);
+      await conn.run(`UPDATE keyv SET value = 'not-json' WHERE key = 'good'`);
       const read = await direct.get('good');
       // Should return the raw string 'not-json' without parsing
       assert.strictEqual(read, 'not-json');
@@ -381,119 +381,224 @@ describe('DuckDBStore Store', () => {
   });
 
   describe('namespace support', () => {
-    it('clear() respects namespace filtering', async () => {
-      const store = new KeyvDuckDB(':memory:');
+    it('clear() only clears its own namespace', async () => {
+      const file = path.join(tmpDir, 'ns-clear.duckdb');
+      const users = new KeyvDuckDB(file, { namespace: 'users' });
+      const posts = new KeyvDuckDB(file, { namespace: 'posts' });
+      const none = new KeyvDuckDB(file);
+      await users.set('1', 'Alice');
+      await posts.set('1', 'Hello');
+      await none.set('1', 'data');
 
-      // Set some keys with namespace-like prefixes
-      await store.set('users:1', 'Alice');
-      await store.set('users:2', 'Bob');
-      await store.set('posts:1', 'Hello');
-      await store.set('posts:2', 'World');
-      await store.set('other', 'data');
+      await users.clear();
 
-      // Set namespace and clear
-      store.namespace = 'users';
-      await store.clear();
-
-      // Users keys should be gone
-      assert.strictEqual(await store.get('users:1'), undefined);
-      assert.strictEqual(await store.get('users:2'), undefined);
-
-      // Other keys should remain
-      assert.strictEqual(await store.get('posts:1'), 'Hello');
-      assert.strictEqual(await store.get('posts:2'), 'World');
-      assert.strictEqual(await store.get('other'), 'data');
-
-      await store.dispose();
+      assert.strictEqual(await users.get('1'), undefined);
+      assert.strictEqual(await posts.get('1'), 'Hello');
+      assert.strictEqual(await none.get('1'), 'data');
     });
 
-    it('clear() without namespace clears all keys', async () => {
-      const store = new KeyvDuckDB(':memory:');
+    it('clear() without namespace only clears the empty namespace', async () => {
+      const file = path.join(tmpDir, 'ns-clear-none.duckdb');
+      const none = new KeyvDuckDB(file);
+      const posts = new KeyvDuckDB(file, { namespace: 'posts' });
+      await none.set('a', 'data');
+      await posts.set('a', 'Hello');
 
-      await store.set('users:1', 'Alice');
-      await store.set('posts:1', 'Hello');
-      await store.set('other', 'data');
+      await none.clear();
 
-      // Clear without namespace
-      await store.clear();
-
-      // All keys should be gone
-      assert.strictEqual(await store.get('users:1'), undefined);
-      assert.strictEqual(await store.get('posts:1'), undefined);
-      assert.strictEqual(await store.get('other'), undefined);
-
-      await store.dispose();
+      assert.strictEqual(await none.get('a'), undefined);
+      assert.strictEqual(await posts.get('a'), 'Hello');
     });
 
-    it('iterator() respects namespace filtering', async () => {
-      const store = new KeyvDuckDB(':memory:');
+    it('iterator() yields only its own namespace, with plain keys', async () => {
+      const file = path.join(tmpDir, 'ns-iter.duckdb');
+      const users = new KeyvDuckDB(file, { namespace: 'users' });
+      const posts = new KeyvDuckDB(file, { namespace: 'posts' });
+      await users.set('1', 'Alice');
+      await users.set('2', 'Bob');
+      await posts.set('1', 'Hello');
 
-      // Set keys with namespace-like prefixes
-      await store.set('users:1', 'Alice');
-      await store.set('users:2', 'Bob');
-      await store.set('posts:1', 'Hello');
-      await store.set('posts:2', 'World');
-      await store.set('other', 'data');
+      const keys: string[] = [];
+      for await (const [key] of users.iterator()) keys.push(key);
+      assert.deepStrictEqual(keys, ['1', '2']);
+    });
 
-      // Iterate with namespace filter
-      const userKeys: string[] = [];
-      for await (const [key, _value] of store.iterator('users')) {
-        userKeys.push(key);
+    it('namespace may be set after construction, as Keyv does', async () => {
+      const file = path.join(tmpDir, 'ns-setter.duckdb');
+      const a = new KeyvDuckDB(file);
+      const b = new KeyvDuckDB(file);
+      a.namespace = 'a';
+      b.namespace = 'b';
+      await a.set('k', 'from-a');
+      await b.set('k', 'from-b');
+      assert.strictEqual(await a.get('k'), 'from-a');
+      assert.strictEqual(await b.get('k'), 'from-b');
+    });
+
+    it('matches `_` and `%` in a namespace literally', async () => {
+      const file = path.join(tmpDir, 'ns-wild.duckdb');
+      const under = new KeyvDuckDB(file, { namespace: 'a_c' });
+      const other = new KeyvDuckDB(file, { namespace: 'abc' });
+      await under.set('k', 'under');
+      await other.set('k', 'other');
+      await under.clear();
+      assert.strictEqual(await other.get('k'), 'other');
+    });
+
+    it('works through Keyv with one store per namespace', async () => {
+      const file = path.join(tmpDir, 'ns-keyv.duckdb');
+      const users = new Keyv({ store: new KeyvDuckDB(file), namespace: 'users' });
+      const posts = new Keyv({ store: new KeyvDuckDB(file), namespace: 'posts' });
+      await users.set('1', 'Alice');
+      await posts.set('1', 'Hello');
+      await users.clear();
+      assert.strictEqual(await users.get('1'), undefined);
+      assert.strictEqual(await posts.get('1'), 'Hello');
+    });
+  });
+
+  describe('keyv 6 contract', () => {
+    it('declares absolute expires support', () => {
+      assert.strictEqual(duckdbStore.capabilities.expires, true);
+    });
+
+    it('setMany and deleteMany return one boolean per entry', async () => {
+      const file = path.join(tmpDir, 'many.duckdb');
+      const direct = new KeyvDuckDB(file);
+      assert.deepStrictEqual(
+        await direct.setMany([
+          { key: 'a', value: '1' },
+          { key: 'b', value: '2' },
+        ]),
+        [true, true]
+      );
+      assert.deepStrictEqual(await direct.deleteMany(['a', 'zzz']), [true, false]);
+      assert.deepStrictEqual(await direct.setMany([]), []);
+      assert.deepStrictEqual(await direct.deleteMany([]), []);
+    });
+
+    it('setMany keeps the last entry for a repeated key', async () => {
+      const file = path.join(tmpDir, 'many-dup.duckdb');
+      const direct = new KeyvDuckDB(file);
+      assert.deepStrictEqual(
+        await direct.setMany([
+          { key: 'a', value: 'first' },
+          { key: 'a', value: 'second' },
+        ]),
+        [true, true]
+      );
+      assert.strictEqual(await direct.get('a'), 'second');
+    });
+
+    it('hides expired rows from get, getMany, has, hasMany and iterator', async () => {
+      const file = path.join(tmpDir, 'expired.duckdb');
+      const direct = new KeyvDuckDB(file);
+      await direct.set('old', 'x', Date.now() - 1000);
+      await direct.set('new', 'y', Date.now() + 60_000);
+      assert.strictEqual(await direct.get('old'), undefined);
+      assert.strictEqual(await direct.get('new'), 'y');
+      assert.deepStrictEqual(await direct.getMany(['old', 'new']), [undefined, 'y']);
+      assert.strictEqual(await direct.has('old'), false);
+      assert.deepStrictEqual(await direct.hasMany(['old', 'new']), [false, true]);
+      const keys: string[] = [];
+      for await (const [key] of direct.iterator()) keys.push(key);
+      assert.deepStrictEqual(keys, ['new']);
+    });
+
+    it('stores no expiry for a null, NaN or infinite expires', async () => {
+      const file = path.join(tmpDir, 'bad-expires.duckdb');
+      const direct = new KeyvDuckDB(file);
+      for (const bad of [null, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        await direct.set('k', 'v', bad as never);
+        assert.strictEqual(await direct.get('k'), 'v');
       }
-
-      // Should only get user keys
-      assert.strictEqual(userKeys.length, 2);
-      assert.ok(userKeys.includes('users:1'));
-      assert.ok(userKeys.includes('users:2'));
-      assert.ok(!userKeys.includes('posts:1'));
-      assert.ok(!userKeys.includes('other'));
-
-      await store.dispose();
+      assert.deepStrictEqual(
+        await direct.setMany([
+          { key: 'a', value: '1', expires: Number.NaN },
+          { key: 'b', value: '2', expires: null as never },
+        ]),
+        [true, true]
+      );
+      assert.deepStrictEqual(await direct.getMany(['a', 'b']), ['1', '2']);
     });
 
-    it('iterator() with instance namespace', async () => {
-      const store = new KeyvDuckDB(':memory:');
-      store.namespace = 'posts';
+    it('overwrites an existing key and its expiry', async () => {
+      const file = path.join(tmpDir, 'overwrite.duckdb');
+      const direct = new KeyvDuckDB(file);
+      await direct.set('k', 'one', Date.now() - 1000);
+      await direct.set('k', 'two');
+      assert.strictEqual(await direct.get('k'), 'two');
+    });
+  });
 
-      await store.set('users:1', 'Alice');
-      await store.set('posts:1', 'Hello');
-      await store.set('posts:2', 'World');
-
-      // Iterate using instance namespace
-      const postKeys: string[] = [];
-      for await (const [key, _value] of store.iterator()) {
-        postKeys.push(key);
-      }
-
-      // Should only get post keys
-      assert.strictEqual(postKeys.length, 2);
-      assert.ok(postKeys.includes('posts:1'));
-      assert.ok(postKeys.includes('posts:2'));
-      assert.ok(!postKeys.includes('users:1'));
-
-      await store.dispose();
+  describe('options', () => {
+    it('rejects unrecognised options (object form)', () => {
+      assert.throws(() => new KeyvDuckDB({ path: path.join(tmpDir, 'x.duckdb'), pth: 'oops' } as never), /unrecognised option 'pth'/);
     });
 
-    it('iterator() without namespace returns all keys', async () => {
-      const store = new KeyvDuckDB(':memory:');
+    it('rejects unrecognised options (string form)', () => {
+      assert.throws(() => new KeyvDuckDB(path.join(tmpDir, 'x.duckdb'), { ttl: 1000, dialect: 'duckdb' } as never), /unrecognised options 'ttl', 'dialect'/);
+    });
 
-      await store.set('users:1', 'Alice');
-      await store.set('posts:1', 'Hello');
-      await store.set('other', 'data');
+    it('accepts every recognised option', () => {
+      assert.doesNotThrow(() => new KeyvDuckDB({ path: path.join(tmpDir, 'x.duckdb'), table: 't', encryptionKey: 'k', keySize: 10, namespace: 'n' }));
+    });
 
-      // Iterate without namespace
-      const allKeys: string[] = [];
-      for await (const [key, _value] of store.iterator()) {
-        allKeys.push(key);
+    it('uses the file given, not the default path, when a path is given', async () => {
+      const file = path.join(tmpDir, 'given.duckdb');
+      const direct = new KeyvDuckDB({ path: file });
+      await direct.set('k', 'v');
+      await direct.dispose();
+      await fs.stat(file);
+    });
+
+    it('uses ~/.keyv-duckdb/store.duckdb only when no path is given', async () => {
+      const home = path.join(tmpDir, 'home');
+      const realHome = process.env.HOME;
+      const realUserProfile = process.env.USERPROFILE;
+      process.env.HOME = home;
+      process.env.USERPROFILE = home;
+      try {
+        const direct = new KeyvDuckDB({ table: 'defaults' });
+        await direct.set('k', 'v');
+        await direct.dispose();
+        await fs.stat(path.join(home, '.keyv-duckdb', 'store.duckdb'));
+      } finally {
+        if (realHome === undefined) delete process.env.HOME;
+        else process.env.HOME = realHome;
+        if (realUserProfile === undefined) delete process.env.USERPROFILE;
+        else process.env.USERPROFILE = realUserProfile;
       }
+    });
+  });
 
-      // Should get all keys
-      assert.strictEqual(allKeys.length, 3);
-      assert.ok(allKeys.includes('users:1'));
-      assert.ok(allKeys.includes('posts:1'));
-      assert.ok(allKeys.includes('other'));
+  describe('quoting', () => {
+    it('handles a quote in the encryption key', async () => {
+      const file = path.join(tmpDir, 'quote-key.duckdb');
+      const key = "it's a 'quoted' key with 32+ chars!";
+      const first = new KeyvDuckDB(file, { encryptionKey: key });
+      await first.set('k', 'v');
+      await first.dispose();
+      const second = new KeyvDuckDB(file, { encryptionKey: key });
+      assert.strictEqual(await second.get('k'), 'v');
+    });
 
-      await store.dispose();
+    it('handles a quote in the database path', async () => {
+      const dir = path.join(tmpDir, "o'brien");
+      const file = path.join(dir, "it's.duckdb");
+      const plain = new KeyvDuckDB(file);
+      await plain.set('k', 'v');
+      await plain.dispose();
+      const encrypted = new KeyvDuckDB(path.join(dir, "enc's.duckdb"), { encryptionKey: 'a_32_character_long_test_key_here' });
+      await encrypted.set('k', 'v');
+      assert.strictEqual(await encrypted.get('k'), 'v');
+    });
+
+    it('handles a quote in the table name', async () => {
+      const file = path.join(tmpDir, 'quote-table.duckdb');
+      const direct = new KeyvDuckDB(file, { table: 'we"ird' });
+      await direct.set('k', 'v');
+      assert.strictEqual(await direct.get('k'), 'v');
     });
   });
 });
